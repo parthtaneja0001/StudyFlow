@@ -18,7 +18,7 @@ import {
 import { useCourse } from "@/components/course-provider";
 import { useApiKey } from "@/components/api-key-provider";
 import { updateCourse } from "@/lib/db";
-import { fetchWithKey, MissingApiKeyError } from "@/lib/api-key";
+import { fetchWithKey, MissingApiKeyError, parseJsonResponse } from "@/lib/api-key";
 import type { Flashcard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -75,8 +75,7 @@ function FlashcardsInner() {
           count,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Failed");
+      const json = await parseJsonResponse<{ flashcards: Omit<Flashcard, "id">[] }>(res);
 
       const newCards: Flashcard[] = (json.flashcards ?? []).map(
         (c: Omit<Flashcard, "id">) => ({ ...c, id: crypto.randomUUID() })

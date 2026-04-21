@@ -17,7 +17,7 @@ import {
 import { useCourse } from "@/components/course-provider";
 import { useApiKey } from "@/components/api-key-provider";
 import { updateCourse } from "@/lib/db";
-import { fetchWithKey, MissingApiKeyError } from "@/lib/api-key";
+import { fetchWithKey, MissingApiKeyError, parseJsonResponse } from "@/lib/api-key";
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import type { NoteDoc } from "@/lib/types";
 import { cn, formatDate, slugify, truncate } from "@/lib/utils";
@@ -85,8 +85,7 @@ function NotesInner() {
           style,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Failed");
+      const json = await parseJsonResponse<{ markdown: string }>(res);
 
       const note: NoteDoc = {
         id: crypto.randomUUID(),

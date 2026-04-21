@@ -68,14 +68,17 @@ Depth rules (CRITICAL):
 - Include concrete examples: code, numbers, scenarios — never just abstract prose.
 - Prefer long and thorough over short and elegant. If in doubt, expand.`;
 
-    // Comprehensive: thinking ON + large output budget for genuinely long notes.
+    // Comprehensive: thinking ON (bounded to stay within Vercel's 60s limit)
+    //                + large output budget for genuinely long notes.
     // Outline/cheatsheet: thinking OFF (fast, concise).
     const generationConfig =
       style === "comprehensive"
         ? {
             temperature: 0.6,
             maxOutputTokens: 8192,
-            thinkingConfig: { thinkingBudget: -1 },
+            // Bounded thinking: enough to plan structure, not so much that we
+            // exceed Vercel's 60s function timeout on broad topics.
+            thinkingConfig: { thinkingBudget: 2048 },
           }
         : {
             temperature: 0.6,

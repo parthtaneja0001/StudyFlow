@@ -23,7 +23,7 @@ import Link from "next/link";
 import { useCourse } from "@/components/course-provider";
 import { useApiKey } from "@/components/api-key-provider";
 import { updateCourse } from "@/lib/db";
-import { fetchWithKey, MissingApiKeyError } from "@/lib/api-key";
+import { fetchWithKey, MissingApiKeyError, parseJsonResponse } from "@/lib/api-key";
 import type { Course, Quiz, QuizQuestion, WeekPlan } from "@/lib/types";
 import { cn, formatShortDate } from "@/lib/utils";
 
@@ -347,8 +347,7 @@ function QuizModal({
           count: 5,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Failed");
+      const json = await parseJsonResponse<{ questions: Omit<QuizQuestion, "id">[] }>(res);
       const withIds: QuizQuestion[] = (json.questions ?? []).map(
         (q: Omit<QuizQuestion, "id">) => ({ ...q, id: crypto.randomUUID() })
       );
