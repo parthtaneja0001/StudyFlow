@@ -29,11 +29,60 @@ export function createClient(key: string) {
   return new GoogleGenerativeAI(key);
 }
 
-const TRANSIENT_CODES = [429, 500, 502, 503, 504];
+/**
+ * Convert a Gemini SDK error into a concise, user-facing message.
+ * Returns null if it's not a recognized Gemini error (caller falls back to raw).
+ */
+export function friendlyGeminiError(err: unknown): { message: string; status: number } | null {
+  const raw = err instanceof Error ? err.message : String(err);
 
-function isTransient(err: unknown): boolean {
+  if (isQuotaError(err)) {
+    return {
+      message:
+        "Your Gemini API quota is exhausted for this model. Check usage at aistudio.google.com or try again tomorrow.",
+      status: 429,
+    };
+  }
+  if (isRateLimit(err)) {
+    return {
+      message: "Too many requests to Gemini. Wait a few seconds and try again.",
+      status: 429,
+    };
+  }
+  if (isCapacityError(err)) {
+    return {
+      message: "Gemini is overloaded right now. We retried automatically — try again in a minute.",
+      status: 503,
+    };
+  }
+  if (/API key not valid|API_KEY_INVALID|\[(400|401|403) /.test(raw)) {
+    return {
+      message: "Gemini rejected the API key. Update it in Settings.",
+      status: 401,
+    };
+  }
+  return null;
+}
+
+function isCapacityError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return TRANSIENT_CODES.some((c) => msg.includes(`[${c} `));
+  return /\[(500|502|503|504) /.test(msg);
+}
+
+function isQuotaError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (!/\[429 /.test(msg)) return false;
+  return /quota|limit:\s*0|free_tier_requests/i.test(msg);
+}
+
+function isRateLimit(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\[429 /.test(msg) && !isQuotaError(err);
+}
+
+/** True if it's worth retrying with backoff. Quota errors are not transient. */
+function isRetryable(err: unknown): boolean {
+  return isCapacityError(err) || isRateLimit(err);
 }
 
 export async function generateWithRetry(
@@ -48,7 +97,7 @@ export async function generateWithRetry(
       return await model.generateContent(input);
     } catch (err) {
       lastErr = err;
-      if (attempt === retries || !isTransient(err)) throw err;
+      if (attempt === retries || !isRetryable(err)) throw err;
       const delay = baseDelayMs * 2 ** attempt + Math.random() * 250;
       console.warn(
         `[gemini] transient error on attempt ${attempt + 1}/${retries + 1}, retrying in ${Math.round(delay)}ms`

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   createClient,
+  friendlyGeminiError,
   generateWithRetry,
   MissingKeyError,
   MODEL_ID,
@@ -75,13 +76,9 @@ Write ${count} multiple-choice questions covering the most important concepts a 
       return NextResponse.json({ error: err.message }, { status: 401 });
     }
     console.error("[generate-quiz] error", err);
+    const friendly = friendlyGeminiError(err);
+    if (friendly) return NextResponse.json({ error: friendly.message }, { status: friendly.status });
     const raw = err instanceof Error ? err.message : "Failed to generate quiz";
-    const friendly = /\[(503|504|429|500|502) /.test(raw)
-      ? "Gemini is busy right now. Please try again in a minute."
-      : /\[401|403 /.test(raw)
-        ? "Gemini rejected the API key. Update it in Settings."
-        : raw;
-    const status = /\[401|403 /.test(raw) ? 401 : 500;
-    return NextResponse.json({ error: friendly }, { status });
+    return NextResponse.json({ error: raw }, { status: 500 });
   }
 }
