@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { genAI, generateWithRetry, MODEL_ID, quizSchema } from "@/lib/gemini";
+import {
+  createClient,
+  generateWithRetry,
+  MissingKeyError,
+  MODEL_ID,
+  quizSchema,
+  resolveApiKey,
+} from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -15,6 +22,7 @@ type Body = {
 
 export async function POST(req: Request) {
   try {
+    const apiKey = resolveApiKey(req);
     const body = (await req.json()) as Body;
     const { courseTitle, textbook, topic, objectives = [], readings = [], count = 5 } = body;
 
@@ -22,12 +30,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Topic is required" }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({
+    const model = createClient(apiKey).getGenerativeModel({
       model: MODEL_ID,
       generationConfig: {
         responseMimeType: "application/json",
-        // @ts-expect-error SchemaType enum values are compatible at runtime
-        responseSchema: quizSchema,
+        responseSchema: quizSchema as never,
         temperature: 0.6,
       },
       systemInstruction: `You are an exam-writing expert. Build high-quality multiple-choice quiz questions that a college instructor would actually ask on a midterm.
@@ -44,7 +51,9 @@ Rules:
     });
 
     const objectivesBlock =
-      objectives.length > 0 ? `\nLearning objectives:\n${objectives.map((o) => `- ${o}`).join("\n")}` : "";
+      objectives.length > 0
+        ? `\nLearning objectives:\n${objectives.map((o) => `- ${o}`).join("\n")}`
+        : "";
     const readingsBlock =
       readings.length > 0
         ? `\nReadings for this part:\n${readings.map((r) => `- ${r.title} (${r.source}${r.chapters ? `, ${r.chapters}` : ""})`).join("\n")}`
@@ -62,11 +71,17 @@ Write ${count} multiple-choice questions covering the most important concepts a 
 
     return NextResponse.json({ ok: true, questions: parsed.questions ?? [] });
   } catch (err) {
+    if (err instanceof MissingKeyError) {
+      return NextResponse.json({ error: err.message }, { status: 401 });
+    }
     console.error("[generate-quiz] error", err);
     const raw = err instanceof Error ? err.message : "Failed to generate quiz";
     const friendly = /\[(503|504|429|500|502) /.test(raw)
       ? "Gemini is busy right now. Please try again in a minute."
-      : raw;
-    return NextResponse.json({ error: friendly }, { status: 500 });
+      : /\[401|403 /.test(raw)
+        ? "Gemini rejected the API key. Update it in Settings."
+        : raw;
+    const status = /\[401|403 /.test(raw) ? 401 : 500;
+    return NextResponse.json({ error: friendly }, { status });
   }
 }

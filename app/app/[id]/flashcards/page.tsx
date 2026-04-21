@@ -16,7 +16,9 @@ import {
   X,
 } from "lucide-react";
 import { useCourse } from "@/components/course-provider";
+import { useApiKey } from "@/components/api-key-provider";
 import { updateCourse } from "@/lib/db";
+import { fetchWithKey, MissingApiKeyError } from "@/lib/api-key";
 import type { Flashcard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +32,7 @@ export default function FlashcardsPage() {
 
 function FlashcardsInner() {
   const { course } = useCourse();
+  const { openSettings } = useApiKey();
   const search = useSearchParams();
   const [topic, setTopic] = useState(search.get("topic") ?? "");
   const [chapter, setChapter] = useState(search.get("chapter") ?? "");
@@ -61,7 +64,7 @@ function FlashcardsInner() {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/generate-flashcards", {
+      const res = await fetchWithKey("/api/generate-flashcards", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -84,7 +87,13 @@ function FlashcardsInner() {
       toast.success(`Generated ${newCards.length} flashcards`);
       setOpenDeck(topic.trim());
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to generate");
+      if (err instanceof MissingApiKeyError) {
+        toast.error("Add your Gemini API key first", {
+          action: { label: "Settings", onClick: openSettings },
+        });
+      } else {
+        toast.error(err instanceof Error ? err.message : "Failed to generate");
+      }
     } finally {
       setLoading(false);
     }

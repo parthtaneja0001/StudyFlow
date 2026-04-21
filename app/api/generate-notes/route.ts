@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { genAI, generateWithRetry, MODEL_ID } from "@/lib/gemini";
+import {
+  createClient,
+  generateWithRetry,
+  MissingKeyError,
+  MODEL_ID,
+  resolveApiKey,
+} from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -14,6 +20,7 @@ type Body = {
 
 export async function POST(req: Request) {
   try {
+    const apiKey = resolveApiKey(req);
     const body = (await req.json()) as Body;
     const { courseTitle, textbook, topic, objectives = [], style = "comprehensive" } = body;
 
@@ -28,7 +35,7 @@ export async function POST(req: Request) {
           ? "Produce a hierarchical outline with H2/H3 sections and short bullet points under each."
           : "Produce comprehensive study notes with clear sections, definitions, examples, intuition, and common pitfalls.";
 
-    const model = genAI.getGenerativeModel({
+    const model = createClient(apiKey).getGenerativeModel({
       model: MODEL_ID,
       generationConfig: {
         temperature: 0.6,
@@ -66,11 +73,17 @@ Write the notes now.`;
 
     return NextResponse.json({ ok: true, markdown });
   } catch (err) {
+    if (err instanceof MissingKeyError) {
+      return NextResponse.json({ error: err.message }, { status: 401 });
+    }
     console.error("[generate-notes] error", err);
     const raw = err instanceof Error ? err.message : "Failed to generate notes";
     const friendly = /\[(503|504|429|500|502) /.test(raw)
       ? "Gemini is busy right now. Please try again in a minute."
-      : raw;
-    return NextResponse.json({ error: friendly }, { status: 500 });
+      : /\[401|403 /.test(raw)
+        ? "Gemini rejected the API key. Update it in Settings."
+        : raw;
+    const status = /\[401|403 /.test(raw) ? 401 : 500;
+    return NextResponse.json({ error: friendly }, { status });
   }
 }

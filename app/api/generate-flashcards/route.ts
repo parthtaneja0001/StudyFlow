@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { genAI, generateWithRetry, MODEL_ID, flashcardsSchema } from "@/lib/gemini";
+import {
+  createClient,
+  flashcardsSchema,
+  generateWithRetry,
+  MissingKeyError,
+  MODEL_ID,
+  resolveApiKey,
+} from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -14,6 +21,7 @@ type Body = {
 
 export async function POST(req: Request) {
   try {
+    const apiKey = resolveApiKey(req);
     const body = (await req.json()) as Body;
     const { courseTitle, textbook, topic, chapter, count = 12 } = body;
 
@@ -21,12 +29,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Topic is required" }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({
+    const model = createClient(apiKey).getGenerativeModel({
       model: MODEL_ID,
       generationConfig: {
         responseMimeType: "application/json",
-        // @ts-expect-error SchemaType enum values are compatible at runtime
-        responseSchema: flashcardsSchema,
+        responseSchema: flashcardsSchema as never,
         temperature: 0.7,
       },
       systemInstruction: `You are an expert tutor. Generate high-quality spaced-repetition flashcards.
@@ -53,11 +60,17 @@ Generate exactly ${count} flashcards for this topic. Cover foundational concepts
 
     return NextResponse.json({ ok: true, flashcards: parsed.flashcards ?? [] });
   } catch (err) {
+    if (err instanceof MissingKeyError) {
+      return NextResponse.json({ error: err.message }, { status: 401 });
+    }
     console.error("[generate-flashcards] error", err);
     const raw = err instanceof Error ? err.message : "Failed to generate flashcards";
     const friendly = /\[(503|504|429|500|502) /.test(raw)
       ? "Gemini is busy right now. Please try again in a minute."
-      : raw;
-    return NextResponse.json({ error: friendly }, { status: 500 });
+      : /\[401|403 /.test(raw)
+        ? "Gemini rejected the API key. Update it in Settings."
+        : raw;
+    const status = /\[401|403 /.test(raw) ? 401 : 500;
+    return NextResponse.json({ error: friendly }, { status });
   }
 }

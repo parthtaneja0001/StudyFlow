@@ -15,7 +15,9 @@ import {
   X,
 } from "lucide-react";
 import { useCourse } from "@/components/course-provider";
+import { useApiKey } from "@/components/api-key-provider";
 import { updateCourse } from "@/lib/db";
+import { fetchWithKey, MissingApiKeyError } from "@/lib/api-key";
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import type { NoteDoc } from "@/lib/types";
 import { cn, formatDate, slugify, truncate } from "@/lib/utils";
@@ -48,6 +50,7 @@ export default function NotesPage() {
 
 function NotesInner() {
   const { course } = useCourse();
+  const { openSettings } = useApiKey();
   const search = useSearchParams();
   const [topic, setTopic] = useState(search.get("topic") ?? "");
   const [style, setStyle] = useState<"comprehensive" | "outline" | "cheatsheet">(
@@ -71,7 +74,7 @@ function NotesInner() {
       const relevantWeek = course.weeks.find((w) =>
         w.topic.toLowerCase().includes(topic.toLowerCase())
       );
-      const res = await fetch("/api/generate-notes", {
+      const res = await fetchWithKey("/api/generate-notes", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -95,7 +98,13 @@ function NotesInner() {
       toast.success("Notes generated");
       setOpenId(note.id);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to generate");
+      if (err instanceof MissingApiKeyError) {
+        toast.error("Add your Gemini API key first", {
+          action: { label: "Settings", onClick: openSettings },
+        });
+      } else {
+        toast.error(err instanceof Error ? err.message : "Failed to generate");
+      }
     } finally {
       setLoading(false);
     }

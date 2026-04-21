@@ -13,6 +13,8 @@ import {
 import { cn } from "@/lib/utils";
 import { saveCourse } from "@/lib/db";
 import type { Course } from "@/lib/types";
+import { fetchWithKey, MissingApiKeyError } from "@/lib/api-key";
+import { useApiKey } from "@/components/api-key-provider";
 
 type Stage = "idle" | "uploading" | "parsing" | "building";
 type Mode = "pdf" | "paste";
@@ -33,6 +35,7 @@ function toISODate(d: Date) {
 
 export function UploadDropzone() {
   const router = useRouter();
+  const { openSettings } = useApiKey();
   const inputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<Mode>("pdf");
   const [drag, setDrag] = useState(false);
@@ -99,7 +102,7 @@ export function UploadDropzone() {
 
       try {
         setStage("parsing");
-        const res = await fetch("/api/parse-syllabus", { method: "POST", body: fd });
+        const res = await fetchWithKey("/api/parse-syllabus", { method: "POST", body: fd });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Upload failed");
 
@@ -137,13 +140,19 @@ export function UploadDropzone() {
         toast.success("Study plan ready!");
         router.push(`/app/${course.id}`);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Something went wrong";
-        toast.error(msg);
+        if (err instanceof MissingApiKeyError) {
+          toast.error("Add your Gemini API key first", {
+            action: { label: "Settings", onClick: openSettings },
+          });
+        } else {
+          const msg = err instanceof Error ? err.message : "Something went wrong";
+          toast.error(msg);
+        }
         setStage("idle");
         setFileName("");
       }
     },
-    [router, termStart, termEnd, datesValid]
+    [router, termStart, termEnd, datesValid, openSettings]
   );
 
   return (

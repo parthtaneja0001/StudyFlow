@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { genAI, generateWithRetry, MODEL_ID, syllabusSchema } from "@/lib/gemini";
+import {
+  createClient,
+  generateWithRetry,
+  MissingKeyError,
+  MODEL_ID,
+  resolveApiKey,
+  syllabusSchema,
+} from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -8,6 +15,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function POST(req: Request) {
   try {
+    const apiKey = resolveApiKey(req);
     const form = await req.formData();
     const file = form.get("file") as File | null;
     const pastedText = String(form.get("text") ?? "").trim();
@@ -66,7 +74,7 @@ export async function POST(req: Request) {
 
     const sourceLabel = file ? "syllabus PDF" : "pasted syllabus text";
 
-    const model = genAI.getGenerativeModel({
+    const model = createClient(apiKey).getGenerativeModel({
       model: MODEL_ID,
       generationConfig: {
         responseMimeType: "application/json",
@@ -115,11 +123,17 @@ Content rules:
 
     return NextResponse.json({ ok: true, syllabus: parsed });
   } catch (err) {
+    if (err instanceof MissingKeyError) {
+      return NextResponse.json({ error: err.message }, { status: 401 });
+    }
     console.error("[parse-syllabus] error", err);
     const raw = err instanceof Error ? err.message : "Failed to parse syllabus";
     const friendly = /\[(503|504|429|500|502) /.test(raw)
       ? "Gemini is busy right now. We retried but still couldn't reach it — please try again in a minute."
-      : raw;
-    return NextResponse.json({ error: friendly }, { status: 500 });
+      : /\[401|403 /.test(raw)
+        ? "Gemini rejected the API key. Update it in Settings."
+        : raw;
+    const status = /\[401|403 /.test(raw) ? 401 : 500;
+    return NextResponse.json({ error: friendly }, { status });
   }
 }

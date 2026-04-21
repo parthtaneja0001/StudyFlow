@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { ApiKeyProvider } from "@/components/api-key-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -30,14 +31,14 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-[var(--color-bg)] text-[var(--color-foreground)]">
-        {children}
+        <ApiKeyProvider>{children}</ApiKeyProvider>
         <Toaster
           theme="dark"
           position="bottom-right"
           toastOptions={{
             style: {
               background: "var(--color-panel)",
-              border: "1px solid var(--color-panel-border)",
+              border: "1px solid var(--color-border)",
               color: "var(--color-foreground)",
             },
           }}

@@ -1,14 +1,33 @@
 import { GoogleGenerativeAI, SchemaType, type GenerativeModel } from "@google/generative-ai";
 
-const apiKey = process.env.GEMINI_API_KEY;
-
-if (!apiKey && process.env.NODE_ENV !== "test") {
-  console.warn("[studyflow] GEMINI_API_KEY is not set. Add it to .env.local");
-}
-
-export const genAI = new GoogleGenerativeAI(apiKey ?? "");
+export const API_KEY_HEADER = "x-gemini-key";
 
 export const MODEL_ID = "gemini-2.5-flash";
+
+export class MissingKeyError extends Error {
+  constructor(message = "Gemini API key missing. Add it in Settings.") {
+    super(message);
+    this.name = "MissingKeyError";
+  }
+}
+
+/**
+ * Resolve the API key for this request.
+ * Priority: request header (user-provided) → process.env.GEMINI_API_KEY (local dev fallback).
+ * Throws MissingKeyError if neither exists.
+ */
+export function resolveApiKey(req: Request): string {
+  const headerKey = req.headers.get(API_KEY_HEADER)?.trim();
+  const envKey = process.env.GEMINI_API_KEY?.trim();
+  const key = headerKey || envKey;
+  if (!key) throw new MissingKeyError();
+  return key;
+}
+
+/** Build a fresh GenerativeAI client per request with the user's key. */
+export function createClient(key: string) {
+  return new GoogleGenerativeAI(key);
+}
 
 const TRANSIENT_CODES = [429, 500, 502, 503, 504];
 

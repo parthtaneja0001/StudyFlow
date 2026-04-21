@@ -21,7 +21,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCourse } from "@/components/course-provider";
+import { useApiKey } from "@/components/api-key-provider";
 import { updateCourse } from "@/lib/db";
+import { fetchWithKey, MissingApiKeyError } from "@/lib/api-key";
 import type { Course, Quiz, QuizQuestion, WeekPlan } from "@/lib/types";
 import { cn, formatShortDate } from "@/lib/utils";
 
@@ -311,6 +313,7 @@ function QuizModal({
   weekNumber: number;
   onClose: () => void;
 }) {
+  const { openSettings } = useApiKey();
   const week = course.weeks.find((w) => w.week === weekNumber);
   const [loading, setLoading] = useState(false);
   const [localAnswers, setLocalAnswers] = useState<(number | null)[]>(
@@ -328,7 +331,7 @@ function QuizModal({
   async function generate() {
     setLoading(true);
     try {
-      const res = await fetch("/api/generate-quiz", {
+      const res = await fetchWithKey("/api/generate-quiz", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -358,7 +361,13 @@ function QuizModal({
       await saveQuiz(newQuiz);
       setLocalAnswers(newQuiz.userAnswers);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Quiz generation failed");
+      if (err instanceof MissingApiKeyError) {
+        toast.error("Add your Gemini API key first", {
+          action: { label: "Settings", onClick: openSettings },
+        });
+      } else {
+        toast.error(err instanceof Error ? err.message : "Quiz generation failed");
+      }
     } finally {
       setLoading(false);
     }

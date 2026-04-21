@@ -6,6 +6,8 @@ import { ArrowRight, CalendarDays, HelpCircle, Layers, NotebookPen } from "lucid
 import { Logo } from "@/components/logo";
 import { UploadDropzone } from "@/components/upload-dropzone";
 import { CourseCard } from "@/components/course-card";
+import { SettingsButton } from "@/components/settings-button";
+import { ApiKeyBanner } from "@/components/api-key-banner";
 import { listCourses } from "@/lib/db";
 
 export default function HomePage() {
@@ -17,9 +19,12 @@ export default function HomePage() {
 
       <header className="relative z-10 flex items-center justify-between px-6 md:px-10 py-5 border-b border-[var(--color-border)]/60">
         <Logo />
-        <div className="hidden sm:flex items-center gap-1.5 text-xs text-white/45">
-          <span className="size-1.5 rounded-full bg-emerald-400" />
-          Gemini 2.5 Flash · local storage
+        <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-1.5 text-xs text-white/45">
+            <span className="size-1.5 rounded-full bg-emerald-400" />
+            Gemini 2.5 Flash · local storage
+          </div>
+          <SettingsButton />
         </div>
       </header>
 
@@ -61,8 +66,9 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.25 }}
-          className="max-w-3xl mx-auto"
+          className="max-w-3xl mx-auto space-y-4"
         >
+          <ApiKeyBanner />
           <UploadDropzone />
         </motion.section>
 
