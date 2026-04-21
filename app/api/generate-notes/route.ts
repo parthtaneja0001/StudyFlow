@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import {
   createClient,
+  FALLBACK_MODEL_ID,
   friendlyGeminiError,
   generateWithRetry,
   MissingKeyError,
   MODEL_ID,
+  NO_THINKING,
   resolveApiKey,
 } from "@/lib/gemini";
 
@@ -36,12 +38,7 @@ export async function POST(req: Request) {
           ? "Produce a hierarchical outline with H2/H3 sections and short bullet points under each."
           : "Produce comprehensive study notes with clear sections, definitions, examples, intuition, and common pitfalls.";
 
-    const model = createClient(apiKey).getGenerativeModel({
-      model: MODEL_ID,
-      generationConfig: {
-        temperature: 0.6,
-      },
-      systemInstruction: `You are a world-class study-notes author. Write clean, well-structured Markdown that a student can learn from in one sitting.
+    const systemInstruction = `You are a world-class study-notes author. Write clean, well-structured Markdown that a student can learn from in one sitting.
 
 Formatting rules:
 - Start with a single H1 containing the topic.
@@ -51,7 +48,15 @@ Formatting rules:
 - Include a "Key Takeaways" section at the end (3-5 bullets).
 - Include a "Common Mistakes" section with 2-4 pitfalls.
 - No fluff. No "in this section we will...". Get to the substance.
-- Don't wrap the whole output in a code fence.`,
+- Don't wrap the whole output in a code fence.`;
+
+    const generationConfig = { temperature: 0.6, ...NO_THINKING };
+
+    const client = createClient(apiKey);
+    const model = client.getGenerativeModel({
+      model: MODEL_ID,
+      generationConfig,
+      systemInstruction,
     });
 
     const objectivesBlock =
@@ -69,7 +74,15 @@ Style: ${styleGuide}
 
 Write the notes now.`;
 
-    const result = await generateWithRetry(model, prompt);
+    const result = await generateWithRetry(model, prompt, {
+      retries: 4,
+      fallback: () =>
+        client.getGenerativeModel({
+          model: FALLBACK_MODEL_ID,
+          generationConfig,
+          systemInstruction,
+        }),
+    });
     const markdown = result.response.text();
 
     return NextResponse.json({ ok: true, markdown });

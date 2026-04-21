@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import {
   createClient,
+  FALLBACK_MODEL_ID,
   flashcardsSchema,
   friendlyGeminiError,
   generateWithRetry,
   MissingKeyError,
   MODEL_ID,
+  NO_THINKING,
   resolveApiKey,
 } from "@/lib/gemini";
 
@@ -30,14 +32,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Topic is required" }, { status: 400 });
     }
 
-    const model = createClient(apiKey).getGenerativeModel({
-      model: MODEL_ID,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: flashcardsSchema as never,
-        temperature: 0.7,
-      },
-      systemInstruction: `You are an expert tutor. Generate high-quality spaced-repetition flashcards.
+    const systemInstruction = `You are an expert tutor. Generate high-quality spaced-repetition flashcards.
 
 Principles (from Michael Nielsen & Andy Matuschak):
 - Each card tests ONE atomic concept.
@@ -45,7 +40,20 @@ Principles (from Michael Nielsen & Andy Matuschak):
 - Backs are concise (1-3 sentences), complete, and standalone.
 - Mix difficulties: definitions (easy), application (medium), synthesis (hard).
 - Prefer "why" and "how" over pure "what".
-- No duplicates. No trivia.`,
+- No duplicates. No trivia.`;
+
+    const generationConfig = {
+      responseMimeType: "application/json",
+      responseSchema: flashcardsSchema as never,
+      temperature: 0.7,
+      ...NO_THINKING,
+    };
+
+    const client = createClient(apiKey);
+    const model = client.getGenerativeModel({
+      model: MODEL_ID,
+      generationConfig,
+      systemInstruction,
     });
 
     const prompt = `Course: ${courseTitle}
@@ -55,7 +63,15 @@ ${chapter ? `Chapter: ${chapter}` : ""}
 
 Generate exactly ${count} flashcards for this topic. Cover foundational concepts, key terms, formulas/rules, and at least 2 application-style cards.`;
 
-    const result = await generateWithRetry(model, prompt);
+    const result = await generateWithRetry(model, prompt, {
+      retries: 4,
+      fallback: () =>
+        client.getGenerativeModel({
+          model: FALLBACK_MODEL_ID,
+          generationConfig,
+          systemInstruction,
+        }),
+    });
     const text = result.response.text();
     const parsed = JSON.parse(text);
 

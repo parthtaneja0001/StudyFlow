@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import {
   createClient,
+  FALLBACK_MODEL_ID,
   friendlyGeminiError,
   generateWithRetry,
   MissingKeyError,
   MODEL_ID,
+  NO_THINKING,
   resolveApiKey,
   syllabusSchema,
 } from "@/lib/gemini";
@@ -74,16 +76,7 @@ export async function POST(req: Request) {
     );
 
     const sourceLabel = file ? "syllabus PDF" : "pasted syllabus text";
-
-    const model = createClient(apiKey).getGenerativeModel({
-      model: MODEL_ID,
-      generationConfig: {
-        responseMimeType: "application/json",
-        // @ts-expect-error SchemaType enum values are compatible at runtime
-        responseSchema: syllabusSchema,
-        temperature: 0.2,
-      },
-      systemInstruction: `You are an expert academic advisor. Break down the provided ${sourceLabel} into a weekly study plan that fits into the student's term window.
+    const systemInstruction = `You are an expert academic advisor. Break down the provided ${sourceLabel} into a weekly study plan that fits into the student's term window.
 
 CRITICAL DATE RULES — follow these exactly:
 - The student's term runs from ${termStart} (week 1 start) to ${termEnd} (final week's last day).
@@ -100,7 +93,20 @@ Content rules:
 - If the syllabus covers fewer topics than weeks, stretch them out logically (review weeks, practice weeks, project weeks).
 - If the syllabus covers more topics than weeks, combine closely related ones.
 - Detect the primary textbook and put it in the textbook field.
-- Keep descriptions under 200 characters.`,
+- Keep descriptions under 200 characters.`;
+
+    const client = createClient(apiKey);
+    const generationConfig = {
+      responseMimeType: "application/json",
+      responseSchema: syllabusSchema as never,
+      temperature: 0.2,
+      ...NO_THINKING,
+    };
+
+    const model = client.getGenerativeModel({
+      model: MODEL_ID,
+      generationConfig,
+      systemInstruction,
     });
 
     const userPrompt = `Break this syllabus into ${totalWeeks} weeks running ${termStart} to ${termEnd}. For each week, provide topic, readings, and 2-4 learning objectives. Do not include assignments. Follow the schema strictly.`;
@@ -117,7 +123,15 @@ Content rules:
         ]
       : [`SYLLABUS TEXT:\n\n${pastedText}\n\n---\n\n${userPrompt}`];
 
-    const result = await generateWithRetry(model, parts);
+    const result = await generateWithRetry(model, parts, {
+      retries: 4,
+      fallback: () =>
+        client.getGenerativeModel({
+          model: FALLBACK_MODEL_ID,
+          generationConfig,
+          systemInstruction,
+        }),
+    });
 
     const text = result.response.text();
     const parsed = JSON.parse(text);

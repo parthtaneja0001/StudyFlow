@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import {
   createClient,
+  FALLBACK_MODEL_ID,
   friendlyGeminiError,
   generateWithRetry,
   MissingKeyError,
   MODEL_ID,
+  NO_THINKING,
   quizSchema,
   resolveApiKey,
 } from "@/lib/gemini";
@@ -31,14 +33,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Topic is required" }, { status: 400 });
     }
 
-    const model = createClient(apiKey).getGenerativeModel({
-      model: MODEL_ID,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: quizSchema as never,
-        temperature: 0.6,
-      },
-      systemInstruction: `You are an exam-writing expert. Build high-quality multiple-choice quiz questions that a college instructor would actually ask on a midterm.
+    const systemInstruction = `You are an exam-writing expert. Build high-quality multiple-choice quiz questions that a college instructor would actually ask on a midterm.
 
 Rules:
 - Produce exactly ${count} questions.
@@ -48,7 +43,20 @@ Rules:
 - Distractors must be plausible (common misconceptions, off-by-one mistakes, swapped definitions). Never absurd.
 - Each "explanation" is 1-2 sentences. State why the correct answer is correct AND briefly why the top distractor is wrong.
 - Write clear, self-contained stems. No "all of the above" / "none of the above".
-- Prefer questions that test understanding, not memorization.`,
+- Prefer questions that test understanding, not memorization.`;
+
+    const generationConfig = {
+      responseMimeType: "application/json",
+      responseSchema: quizSchema as never,
+      temperature: 0.6,
+      ...NO_THINKING,
+    };
+
+    const client = createClient(apiKey);
+    const model = client.getGenerativeModel({
+      model: MODEL_ID,
+      generationConfig,
+      systemInstruction,
     });
 
     const objectivesBlock =
@@ -66,7 +74,15 @@ Topic (this week's focus): ${topic}${objectivesBlock}${readingsBlock}
 
 Write ${count} multiple-choice questions covering the most important concepts a student must know for this topic.`;
 
-    const result = await generateWithRetry(model, prompt);
+    const result = await generateWithRetry(model, prompt, {
+      retries: 4,
+      fallback: () =>
+        client.getGenerativeModel({
+          model: FALLBACK_MODEL_ID,
+          generationConfig,
+          systemInstruction,
+        }),
+    });
     const text = result.response.text();
     const parsed = JSON.parse(text);
 

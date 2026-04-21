@@ -3,6 +3,14 @@ import { GoogleGenerativeAI, SchemaType, type GenerativeModel } from "@google/ge
 export const API_KEY_HEADER = "x-gemini-key";
 
 export const MODEL_ID = "gemini-2.5-flash";
+export const FALLBACK_MODEL_ID = "gemini-flash-latest";
+
+/**
+ * Disables Gemini 2.5's reserved "thinking" tokens for structured tasks.
+ * Drops latency, reduces load, and rarely hurts quality for schema-driven output.
+ * Merge this into generationConfig.
+ */
+export const NO_THINKING = { thinkingConfig: { thinkingBudget: 0 } };
 
 export class MissingKeyError extends Error {
   constructor(message = "Gemini API key missing. Add it in Settings.") {
@@ -88,16 +96,32 @@ function isRetryable(err: unknown): boolean {
 export async function generateWithRetry(
   model: GenerativeModel,
   input: Parameters<GenerativeModel["generateContent"]>[0],
-  opts: { retries?: number; baseDelayMs?: number } = {}
+  opts: { retries?: number; baseDelayMs?: number; fallback?: () => GenerativeModel } = {}
 ) {
-  const { retries = 3, baseDelayMs = 800 } = opts;
+  const { retries = 3, baseDelayMs = 900, fallback } = opts;
   let lastErr: unknown;
+  let activeModel = model;
+  let switchedToFallback = false;
+
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await model.generateContent(input);
+      return await activeModel.generateContent(input);
     } catch (err) {
       lastErr = err;
       if (attempt === retries || !isRetryable(err)) throw err;
+
+      // On the 2nd capacity failure, swap to a lighter model for remaining attempts.
+      if (
+        !switchedToFallback &&
+        fallback &&
+        attempt >= 1 &&
+        isCapacityError(err)
+      ) {
+        console.warn("[gemini] primary model capacity exhausted, switching to fallback model");
+        activeModel = fallback();
+        switchedToFallback = true;
+      }
+
       const delay = baseDelayMs * 2 ** attempt + Math.random() * 250;
       console.warn(
         `[gemini] transient error on attempt ${attempt + 1}/${retries + 1}, retrying in ${Math.round(delay)}ms`
