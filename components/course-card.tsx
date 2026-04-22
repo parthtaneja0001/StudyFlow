@@ -27,7 +27,10 @@ export function CourseCard({ course, onDelete }: { course: Course; onDelete?: ()
               </span>
             )}
           </div>
-          <span className="text-[11px] text-white/35">{formatDate(course.createdAt)}</span>
+          {/* Date hides on hover to let the delete button take this slot */}
+          <span className="text-[11px] text-white/35 group-hover:opacity-0 transition-opacity">
+            {formatDate(course.createdAt)}
+          </span>
         </div>
 
         <div className="text-[15px] font-semibold text-white leading-snug mb-1">
@@ -57,7 +60,7 @@ export function CourseCard({ course, onDelete }: { course: Course; onDelete?: ()
             toast.error(err instanceof Error ? err.message : "Failed to delete");
           }
         }}
-        className="absolute top-3 right-3 p-1.5 rounded-md text-white/30 hover:text-rose-300 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute top-3.5 right-3.5 p-1 rounded-md text-white/40 hover:text-rose-300 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
         aria-label="Delete course"
       >
         <Trash2 className="size-4" />
