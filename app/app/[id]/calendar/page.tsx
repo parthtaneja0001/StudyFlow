@@ -326,8 +326,8 @@ function QuizModal({
   if (!week) return null;
   const quiz = week.quiz;
 
-  async function saveQuiz(update: Quiz) {
-    await saveQuizForWeek(course.id, weekNumber, update);
+  async function saveQuiz(update: Quiz, opts: { logActivity?: boolean } = {}) {
+    await saveQuizForWeek(course.id, weekNumber, update, opts);
     await onRefresh();
   }
 
@@ -388,7 +388,11 @@ function QuizModal({
     quiz.questions.forEach((q, i) => {
       if (localAnswers[i] === q.correctIndex) score++;
     });
-    await saveQuiz({ ...quiz, userAnswers: localAnswers, revealed: true, score });
+    const wasFirstReveal = !quiz.revealed;
+    await saveQuiz(
+      { ...quiz, userAnswers: localAnswers, revealed: true, score },
+      { logActivity: wasFirstReveal }
+    );
     toast.success(`You scored ${score}/${quiz.questions.length}`);
   }
 

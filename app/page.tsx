@@ -9,6 +9,7 @@ import { SettingsButton } from "@/components/settings-button";
 import { ApiKeyBanner } from "@/components/api-key-banner";
 import { UserMenu } from "@/components/user-menu";
 import { ImportLocalBanner } from "@/components/import-local-banner";
+import { StreakPill } from "@/components/streak-pill";
 import { useCourses } from "@/lib/hooks";
 
 export default function HomePage() {
@@ -21,10 +22,7 @@ export default function HomePage() {
       <header className="relative z-10 flex items-center justify-between px-6 md:px-10 py-5 border-b border-[var(--color-border)]/60">
         <Logo />
         <div className="flex items-center gap-2">
-          <div className="hidden md:flex items-center gap-1.5 text-xs text-white/45 mr-2">
-            <span className="size-1.5 rounded-full bg-emerald-400" />
-            Gemini 2.5 Flash
-          </div>
+          <StreakPill />
           <SettingsButton />
           <UserMenu />
         </div>

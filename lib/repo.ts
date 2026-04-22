@@ -230,6 +230,7 @@ export async function createCourseFromSyllabus(
     if (wErr) throw new Error(wErr.message);
   }
 
+  await recordActivity("course_created", courseId);
   return courseId;
 }
 
@@ -243,7 +244,8 @@ export async function deleteCourse(id: string): Promise<void> {
 export async function saveQuizForWeek(
   courseId: string,
   weekNumber: number,
-  quiz: Quiz | null
+  quiz: Quiz | null,
+  opts: { logActivity?: boolean } = {}
 ): Promise<void> {
   const db = createClient();
   const { error } = await db
@@ -252,6 +254,9 @@ export async function saveQuizForWeek(
     .eq("course_id", courseId)
     .eq("week_number", weekNumber);
   if (error) throw new Error(error.message);
+  if (opts.logActivity) {
+    await recordActivity("quiz_taken", courseId);
+  }
 }
 
 // ---------- flashcards ----------
@@ -273,6 +278,9 @@ export async function addFlashcards(
     .insert(rows)
     .select("id, front, back, topic, chapter, difficulty");
   if (error) throw new Error(error.message);
+  if ((data ?? []).length > 0) {
+    await recordActivity("flashcards_generated", courseId);
+  }
   return (data ?? []).map<Flashcard>((f) => ({
     id: f.id,
     front: f.front,
@@ -312,6 +320,7 @@ export async function addNote(
     .select("id, topic, markdown, created_at")
     .single();
   if (error) throw new Error(error.message);
+  await recordActivity("notes_generated", courseId);
   return {
     id: data.id,
     topic: data.topic,
@@ -324,4 +333,115 @@ export async function deleteNote(id: string): Promise<void> {
   const db = createClient();
   const { error } = await db.from("notes").delete().eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+// ---------- activity / streak ----------
+export type ActivityKind =
+  | "course_created"
+  | "quiz_taken"
+  | "notes_generated"
+  | "flashcards_generated";
+
+type ActivityRow = {
+  id: string;
+  kind: ActivityKind;
+  course_id: string | null;
+  occurred_at: string;
+};
+
+export async function recordActivity(
+  kind: ActivityKind,
+  courseId?: string | null
+): Promise<void> {
+  const db = createClient();
+  const {
+    data: { user },
+  } = await db.auth.getUser();
+  if (!user) return; // Silently skip when not signed in
+
+  // fire-and-forget; streak UI tolerates missing rows
+  await db.from("activities").insert({
+    user_id: user.id,
+    kind,
+    course_id: courseId ?? null,
+  });
+}
+
+/**
+ * Pull the last N days of activity events (default 180) — enough to compute
+ * streak + longest streak client-side without over-fetching.
+ */
+export async function listRecentActivities(days = 180): Promise<ActivityRow[]> {
+  const db = createClient();
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const { data, error } = await db
+    .from("activities")
+    .select("id, kind, course_id, occurred_at")
+    .gte("occurred_at", since.toISOString())
+    .order("occurred_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export type StreakSummary = {
+  current: number;
+  longest: number;
+  studiedToday: boolean;
+  lastActivityAt: string | null;
+};
+
+function toLocalDateKey(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Compute streak metrics from a flat list of activity rows. */
+export function computeStreak(activities: Pick<ActivityRow, "occurred_at">[]): StreakSummary {
+  if (activities.length === 0) {
+    return { current: 0, longest: 0, studiedToday: false, lastActivityAt: null };
+  }
+
+  const dateKeys = new Set(activities.map((a) => toLocalDateKey(a.occurred_at)));
+  const sorted = [...dateKeys].sort(); // ascending YYYY-MM-DD works lexicographically
+
+  // Longest run in sorted unique-day set
+  let longest = 1;
+  let run = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = new Date(sorted[i - 1]);
+    const cur = new Date(sorted[i]);
+    const diff = Math.round((+cur - +prev) / 86400000);
+    if (diff === 1) {
+      run += 1;
+      longest = Math.max(longest, run);
+    } else {
+      run = 1;
+    }
+  }
+
+  // Current streak: walk back from today (or yesterday if no activity today)
+  const today = toLocalDateKey(new Date().toISOString());
+  const yesterday = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return toLocalDateKey(d.toISOString());
+  })();
+
+  const studiedToday = dateKeys.has(today);
+  let cursor = studiedToday ? today : dateKeys.has(yesterday) ? yesterday : null;
+  let current = 0;
+  while (cursor && dateKeys.has(cursor)) {
+    current += 1;
+    const d = new Date(cursor);
+    d.setDate(d.getDate() - 1);
+    cursor = toLocalDateKey(d.toISOString());
+  }
+
+  const lastActivityAt = activities[0]?.occurred_at ?? null;
+
+  return { current, longest, studiedToday, lastActivityAt };
 }
