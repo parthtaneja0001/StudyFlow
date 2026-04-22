@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { createClient, MODEL_ID, resolveApiKey } from "@/lib/gemini";
+import { createClient, MODEL_ID, resolveApiKeyFromHeader } from "@/lib/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
   try {
-    const key = resolveApiKey(req);
+    const key = resolveApiKeyFromHeader(req);
     const client = createClient(key);
     const model = client.getGenerativeModel({
       model: MODEL_ID,

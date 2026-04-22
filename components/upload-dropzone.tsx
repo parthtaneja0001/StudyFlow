@@ -11,9 +11,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { saveCourse } from "@/lib/db";
-import type { Course } from "@/lib/types";
-import { fetchWithKey, MissingApiKeyError, parseJsonResponse } from "@/lib/api-key";
+import { createCourseFromSyllabus, type ParsedSyllabus } from "@/lib/repo";
+import { parseJsonResponse } from "@/lib/api-key";
 import { useApiKey } from "@/components/api-key-provider";
 
 type Stage = "idle" | "uploading" | "parsing" | "building";
@@ -102,77 +101,18 @@ export function UploadDropzone() {
 
       try {
         setStage("parsing");
-        const res = await fetchWithKey("/api/parse-syllabus", { method: "POST", body: fd });
-        type RawReading = {
-          title?: string;
-          source?: string;
-          chapters?: string;
-          pages?: string;
-          estimatedMinutes?: number;
-        };
-        type RawWeek = {
-          week: number;
-          startDate: string;
-          endDate: string;
-          topic: string;
-          readings?: RawReading[];
-          objectives?: string[];
-        };
-        type RawSyllabus = {
-          title?: string;
-          code?: string;
-          instructor?: string;
-          term?: string;
-          description?: string;
-          textbook?: string;
-          gradingPolicy?: string;
-          weeks?: RawWeek[];
-        };
-        const json = await parseJsonResponse<{ syllabus: RawSyllabus }>(res);
+        const res = await fetch("/api/parse-syllabus", { method: "POST", body: fd });
+        const json = await parseJsonResponse<{ syllabus: ParsedSyllabus }>(res);
 
         setStage("building");
-        const s = json.syllabus;
-
-        const course: Course = {
-          id: crypto.randomUUID(),
-          title: s.title ?? "Untitled course",
-          code: s.code,
-          instructor: s.instructor,
-          term: s.term,
-          description: s.description,
-          textbook: s.textbook,
-          gradingPolicy: s.gradingPolicy,
-          createdAt: new Date().toISOString(),
-          rawSyllabusName: label,
-          weeks: (s.weeks ?? []).map((w) => ({
-            week: w.week,
-            startDate: w.startDate,
-            endDate: w.endDate,
-            topic: w.topic,
-            readings: (w.readings ?? []).map((r) => ({
-              id: crypto.randomUUID(),
-              title: r.title ?? "",
-              source: r.source ?? "",
-              chapters: r.chapters,
-              pages: r.pages,
-              estimatedMinutes: r.estimatedMinutes,
-            })),
-            objectives: w.objectives ?? [],
-          })),
-          flashcards: [],
-          notes: [],
-        };
-
-        await saveCourse(course);
+        const courseId = await createCourseFromSyllabus(json.syllabus, label);
         toast.success("Study plan ready!");
-        router.push(`/app/${course.id}`);
+        router.push(`/app/${courseId}`);
       } catch (err) {
-        if (err instanceof MissingApiKeyError) {
-          toast.error("Add your Gemini API key first", {
-            action: { label: "Settings", onClick: openSettings },
-          });
+        const msg = err instanceof Error ? err.message : "Something went wrong";
+        if (/api key|not authenticated/i.test(msg)) {
+          toast.error(msg, { action: { label: "Settings", onClick: openSettings } });
         } else {
-          const msg = err instanceof Error ? err.message : "Something went wrong";
           toast.error(msg);
         }
         setStage("idle");

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ArrowLeft, Calendar, Layers, LayoutDashboard, NotebookPen } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { SettingsButton } from "@/components/settings-button";
+import { UserMenu } from "@/components/user-menu";
 import { cn } from "@/lib/utils";
 import type { Course } from "@/lib/types";
 
@@ -50,7 +51,10 @@ export function CourseHeader({ course }: { course: Course }) {
               )}
             </div>
           </div>
-          <SettingsButton />
+          <div className="flex items-center gap-2">
+            <SettingsButton />
+            <UserMenu />
+          </div>
         </div>
 
         <nav className="flex items-center gap-0 -mb-px">

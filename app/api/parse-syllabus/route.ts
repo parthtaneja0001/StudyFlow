@@ -7,9 +7,9 @@ import {
   MissingKeyError,
   MODEL_ID,
   NO_THINKING,
-  resolveApiKey,
   syllabusSchema,
 } from "@/lib/gemini";
+import { getGeminiKeyForCurrentUser } from "@/lib/supabase/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -18,7 +18,8 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function POST(req: Request) {
   try {
-    const apiKey = resolveApiKey(req);
+    const apiKey = await getGeminiKeyForCurrentUser();
+    if (!apiKey) throw new MissingKeyError();
     const form = await req.formData();
     const file = form.get("file") as File | null;
     const pastedText = String(form.get("text") ?? "").trim();

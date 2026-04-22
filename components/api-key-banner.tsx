@@ -4,9 +4,9 @@ import { ArrowRight, KeyRound } from "lucide-react";
 import { useApiKey } from "@/components/api-key-provider";
 
 export function ApiKeyBanner() {
-  const { apiKey, isLoaded, openSettings } = useApiKey();
+  const { hasKey, isLoaded, openSettings } = useApiKey();
 
-  if (!isLoaded || apiKey) return null;
+  if (!isLoaded || hasKey) return null;
 
   return (
     <button

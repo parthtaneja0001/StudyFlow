@@ -5,6 +5,16 @@ export const API_KEY_HEADER = "x-gemini-key";
 export const MODEL_ID = "gemini-2.5-flash";
 export const FALLBACK_MODEL_ID = "gemini-flash-latest";
 
+// Legacy header-based resolver, kept for the /api/validate-key flow where the
+// user is validating a brand-new key before saving it to their profile.
+export function resolveApiKeyFromHeader(req: Request): string {
+  const headerKey = req.headers.get(API_KEY_HEADER)?.trim();
+  const envKey = process.env.GEMINI_API_KEY?.trim();
+  const key = headerKey || envKey;
+  if (!key) throw new MissingKeyError();
+  return key;
+}
+
 /**
  * Disables Gemini 2.5's reserved "thinking" tokens for structured tasks.
  * Drops latency, reduces load, and rarely hurts quality for schema-driven output.
@@ -19,18 +29,6 @@ export class MissingKeyError extends Error {
   }
 }
 
-/**
- * Resolve the API key for this request.
- * Priority: request header (user-provided) → process.env.GEMINI_API_KEY (local dev fallback).
- * Throws MissingKeyError if neither exists.
- */
-export function resolveApiKey(req: Request): string {
-  const headerKey = req.headers.get(API_KEY_HEADER)?.trim();
-  const envKey = process.env.GEMINI_API_KEY?.trim();
-  const key = headerKey || envKey;
-  if (!key) throw new MissingKeyError();
-  return key;
-}
 
 /** Build a fresh GenerativeAI client per request with the user's key. */
 export function createClient(key: string) {

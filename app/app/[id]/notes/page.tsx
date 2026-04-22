@@ -16,8 +16,8 @@ import {
 } from "lucide-react";
 import { useCourse } from "@/components/course-provider";
 import { useApiKey } from "@/components/api-key-provider";
-import { updateCourse } from "@/lib/db";
-import { fetchWithKey, MissingApiKeyError, parseJsonResponse } from "@/lib/api-key";
+import { addNote, deleteNote as deleteNoteRow } from "@/lib/repo";
+import { parseJsonResponse } from "@/lib/api-key";
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import type { NoteDoc } from "@/lib/types";
 import { cn, formatDate, slugify, truncate } from "@/lib/utils";
@@ -49,7 +49,7 @@ export default function NotesPage() {
 }
 
 function NotesInner() {
-  const { course } = useCourse();
+  const { course, refresh } = useCourse();
   const { openSettings } = useApiKey();
   const search = useSearchParams();
   const [topic, setTopic] = useState(search.get("topic") ?? "");
@@ -74,7 +74,7 @@ function NotesInner() {
       const relevantWeek = course.weeks.find((w) =>
         w.topic.toLowerCase().includes(topic.toLowerCase())
       );
-      const res = await fetchWithKey("/api/generate-notes", {
+      const res = await fetch("/api/generate-notes", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -87,22 +87,19 @@ function NotesInner() {
       });
       const json = await parseJsonResponse<{ markdown: string }>(res);
 
-      const note: NoteDoc = {
-        id: crypto.randomUUID(),
+      const note = await addNote(course.id, {
         topic: topic.trim(),
         markdown: json.markdown,
-        createdAt: new Date().toISOString(),
-      };
-      await updateCourse(course.id, { notes: [note, ...course.notes] });
+      });
+      await refresh();
       toast.success("Notes generated");
       setOpenId(note.id);
     } catch (err) {
-      if (err instanceof MissingApiKeyError) {
-        toast.error("Add your Gemini API key first", {
-          action: { label: "Settings", onClick: openSettings },
-        });
+      const msg = err instanceof Error ? err.message : "Failed to generate";
+      if (/api key|not authenticated/i.test(msg)) {
+        toast.error(msg, { action: { label: "Settings", onClick: openSettings } });
       } else {
-        toast.error(err instanceof Error ? err.message : "Failed to generate");
+        toast.error(msg);
       }
     } finally {
       setLoading(false);
@@ -111,10 +108,13 @@ function NotesInner() {
 
   async function deleteNote(id: string) {
     if (!confirm("Delete this note?")) return;
-    await updateCourse(course.id, {
-      notes: course.notes.filter((n) => n.id !== id),
-    });
-    toast.success("Note deleted");
+    try {
+      await deleteNoteRow(id);
+      await refresh();
+      toast.success("Note deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
+    }
   }
 
   const openNote = openId ? course.notes.find((n) => n.id === openId) : null;

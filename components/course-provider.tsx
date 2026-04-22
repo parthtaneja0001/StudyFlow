@@ -1,14 +1,14 @@
 "use client";
 
 import { createContext, useContext, useMemo } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
 import { notFound } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { getCourse } from "@/lib/db";
+import { useCourseById } from "@/lib/hooks";
 import type { Course } from "@/lib/types";
 
 type Ctx = {
   course: Course;
+  refresh: () => Promise<void>;
 };
 
 const CourseContext = createContext<Ctx | null>(null);
@@ -20,9 +20,9 @@ export function useCourse() {
 }
 
 export function CourseProvider({ id, children }: { id: string; children: React.ReactNode }) {
-  const course = useLiveQuery(() => getCourse(id), [id]);
+  const { course, refresh } = useCourseById(id);
 
-  const value = useMemo(() => (course ? { course } : null), [course]);
+  const value = useMemo(() => (course ? { course, refresh } : null), [course, refresh]);
 
   if (course === undefined) {
     return (

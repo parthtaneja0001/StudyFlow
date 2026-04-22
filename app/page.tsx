@@ -1,6 +1,5 @@
 "use client";
 
-import { useLiveQuery } from "dexie-react-hooks";
 import { motion } from "framer-motion";
 import { ArrowRight, CalendarDays, HelpCircle, Layers, NotebookPen } from "lucide-react";
 import { Logo } from "@/components/logo";
@@ -8,10 +7,12 @@ import { UploadDropzone } from "@/components/upload-dropzone";
 import { CourseCard } from "@/components/course-card";
 import { SettingsButton } from "@/components/settings-button";
 import { ApiKeyBanner } from "@/components/api-key-banner";
-import { listCourses } from "@/lib/db";
+import { UserMenu } from "@/components/user-menu";
+import { ImportLocalBanner } from "@/components/import-local-banner";
+import { useCourses } from "@/lib/hooks";
 
 export default function HomePage() {
-  const courses = useLiveQuery(() => listCourses(), []) ?? [];
+  const { courses, refresh } = useCourses();
 
   return (
     <div className="relative min-h-screen">
@@ -19,12 +20,13 @@ export default function HomePage() {
 
       <header className="relative z-10 flex items-center justify-between px-6 md:px-10 py-5 border-b border-[var(--color-border)]/60">
         <Logo />
-        <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-1.5 text-xs text-white/45">
+        <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-1.5 text-xs text-white/45 mr-2">
             <span className="size-1.5 rounded-full bg-emerald-400" />
-            Gemini 2.5 Flash · local storage
+            Gemini 2.5 Flash
           </div>
           <SettingsButton />
+          <UserMenu />
         </div>
       </header>
 
@@ -68,6 +70,7 @@ export default function HomePage() {
           transition={{ duration: 0.5, delay: 0.25 }}
           className="max-w-3xl mx-auto space-y-4"
         >
+          <ImportLocalBanner onImported={refresh} />
           <ApiKeyBanner />
           <UploadDropzone />
         </motion.section>
@@ -105,7 +108,7 @@ export default function HomePage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {courses.map((c) => (
-                <CourseCard key={c.id} course={c} />
+                <CourseCard key={c.id} course={c} onDelete={refresh} />
               ))}
             </div>
           </section>

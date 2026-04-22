@@ -22,13 +22,13 @@ import {
 import Link from "next/link";
 import { useCourse } from "@/components/course-provider";
 import { useApiKey } from "@/components/api-key-provider";
-import { updateCourse } from "@/lib/db";
-import { fetchWithKey, MissingApiKeyError, parseJsonResponse } from "@/lib/api-key";
+import { saveQuizForWeek } from "@/lib/repo";
+import { parseJsonResponse } from "@/lib/api-key";
 import type { Course, Quiz, QuizQuestion, WeekPlan } from "@/lib/types";
 import { cn, formatShortDate } from "@/lib/utils";
 
 export default function CalendarPage() {
-  const { course } = useCourse();
+  const { course, refresh } = useCourse();
   const [openWeeks, setOpenWeeks] = useState<Set<number>>(() => {
     const current = currentWeekNumber(course);
     return new Set([current ?? course.weeks[0]?.week ?? 1]);
@@ -89,6 +89,7 @@ export default function CalendarPage() {
             key={quizWeek}
             course={course}
             weekNumber={quizWeek}
+            onRefresh={refresh}
             onClose={() => setQuizWeek(null)}
           />
         )}
@@ -307,10 +308,12 @@ function SectionCard({
 function QuizModal({
   course,
   weekNumber,
+  onRefresh,
   onClose,
 }: {
   course: Course;
   weekNumber: number;
+  onRefresh: () => Promise<void>;
   onClose: () => void;
 }) {
   const { openSettings } = useApiKey();
@@ -324,14 +327,14 @@ function QuizModal({
   const quiz = week.quiz;
 
   async function saveQuiz(update: Quiz) {
-    const next = course.weeks.map((w) => (w.week === weekNumber ? { ...w, quiz: update } : w));
-    await updateCourse(course.id, { weeks: next });
+    await saveQuizForWeek(course.id, weekNumber, update);
+    await onRefresh();
   }
 
   async function generate() {
     setLoading(true);
     try {
-      const res = await fetchWithKey("/api/generate-quiz", {
+      const res = await fetch("/api/generate-quiz", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -360,12 +363,11 @@ function QuizModal({
       await saveQuiz(newQuiz);
       setLocalAnswers(newQuiz.userAnswers);
     } catch (err) {
-      if (err instanceof MissingApiKeyError) {
-        toast.error("Add your Gemini API key first", {
-          action: { label: "Settings", onClick: openSettings },
-        });
+      const msg = err instanceof Error ? err.message : "Quiz generation failed";
+      if (/api key|not authenticated/i.test(msg)) {
+        toast.error(msg, { action: { label: "Settings", onClick: openSettings } });
       } else {
-        toast.error(err instanceof Error ? err.message : "Quiz generation failed");
+        toast.error(msg);
       }
     } finally {
       setLoading(false);

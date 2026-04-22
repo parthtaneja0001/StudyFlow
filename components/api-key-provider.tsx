@@ -11,19 +11,15 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { ExternalLink, Eye, EyeOff, KeyRound, Loader2, Trash2, X } from "lucide-react";
-import {
-  clearApiKey as clearApiKeyStorage,
-  getApiKey,
-  maskApiKey,
-  setApiKey as setApiKeyStorage,
-} from "@/lib/api-key";
+
+type ProfileInfo = { hasKey: boolean; keyPreview: string | null };
 
 type Ctx = {
-  apiKey: string | null;
+  hasKey: boolean;
+  keyPreview: string | null;
   isLoaded: boolean;
   openSettings: () => void;
-  save: (key: string) => void;
-  clear: () => void;
+  refresh: () => Promise<void>;
 };
 
 const ApiKeyContext = createContext<Ctx | null>(null);
@@ -35,30 +31,43 @@ export function useApiKey() {
 }
 
 export function ApiKeyProvider({ children }: { children: React.ReactNode }) {
-  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [info, setInfo] = useState<ProfileInfo>({ hasKey: false, keyPreview: null });
   const [isLoaded, setIsLoaded] = useState(false);
   const [open, setOpen] = useState(false);
 
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/profile", { cache: "no-store" });
+      if (res.status === 401) {
+        // Not signed in — leave hasKey false, that's fine
+        setInfo({ hasKey: false, keyPreview: null });
+        return;
+      }
+      if (!res.ok) return;
+      const json = (await res.json()) as ProfileInfo;
+      setInfo(json);
+    } catch {
+      // ignore — network issues surface elsewhere
+    } finally {
+      setIsLoaded(true);
+    }
+  }, []);
+
   useEffect(() => {
-    setApiKey(getApiKey());
-    setIsLoaded(true);
-  }, []);
-
-  const save = useCallback((key: string) => {
-    setApiKeyStorage(key);
-    setApiKey(key.trim() || null);
-  }, []);
-
-  const clear = useCallback(() => {
-    clearApiKeyStorage();
-    setApiKey(null);
-  }, []);
+    refresh();
+  }, [refresh]);
 
   const openSettings = useCallback(() => setOpen(true), []);
 
   const value = useMemo(
-    () => ({ apiKey, isLoaded, openSettings, save, clear }),
-    [apiKey, isLoaded, openSettings, save, clear]
+    () => ({
+      hasKey: info.hasKey,
+      keyPreview: info.keyPreview,
+      isLoaded,
+      openSettings,
+      refresh,
+    }),
+    [info, isLoaded, openSettings, refresh]
   );
 
   return (
@@ -67,15 +76,15 @@ export function ApiKeyProvider({ children }: { children: React.ReactNode }) {
       <AnimatePresence>
         {open && (
           <SettingsModal
-            apiKey={apiKey}
-            onSave={(k) => {
-              save(k);
+            keyPreview={info.keyPreview}
+            onSaved={async () => {
+              await refresh();
               toast.success("API key saved");
               setOpen(false);
             }}
-            onClear={() => {
-              clear();
-              toast.success("API key cleared");
+            onCleared={async () => {
+              await refresh();
+              toast.success("API key removed");
             }}
             onClose={() => setOpen(false)}
           />
@@ -86,19 +95,19 @@ export function ApiKeyProvider({ children }: { children: React.ReactNode }) {
 }
 
 function SettingsModal({
-  apiKey,
-  onSave,
-  onClear,
+  keyPreview,
+  onSaved,
+  onCleared,
   onClose,
 }: {
-  apiKey: string | null;
-  onSave: (key: string) => void;
-  onClear: () => void;
+  keyPreview: string | null;
+  onSaved: () => void;
+  onCleared: () => void;
   onClose: () => void;
 }) {
   const [value, setValue] = useState("");
   const [show, setShow] = useState(false);
-  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -114,23 +123,52 @@ function SettingsModal({
       toast.error("That doesn't look like a valid Gemini API key");
       return;
     }
-    setTesting(true);
+    setSaving(true);
     try {
-      const res = await fetch("/api/validate-key", {
+      // Step 1: validate by pinging Gemini
+      const vres = await fetch("/api/validate-key", {
         method: "POST",
         headers: { "content-type": "application/json", "x-gemini-key": trimmed },
       });
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        toast.error(json.error ?? "Key validation failed");
+      const vjson = await vres.json();
+      if (!vres.ok || !vjson.ok) {
+        toast.error(vjson.error ?? "Key validation failed");
+        setSaving(false);
         return;
       }
-      onSave(trimmed);
+      // Step 2: persist to profile
+      const sres = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ geminiKey: trimmed }),
+      });
+      if (!sres.ok) {
+        const j = await sres.json().catch(() => ({}));
+        toast.error(j.error ?? "Failed to save");
+        setSaving(false);
+        return;
+      }
       setValue("");
+      onSaved();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Network error");
     } finally {
-      setTesting(false);
+      setSaving(false);
+    }
+  }
+
+  async function handleClear() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/profile", { method: "DELETE" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        toast.error(j.error ?? "Failed to remove key");
+        return;
+      }
+      onCleared();
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -166,24 +204,23 @@ function SettingsModal({
             Gemini API Key
           </h2>
           <p className="text-[13px] text-white/55 mt-1 leading-relaxed">
-            Your key stays in this browser. It&apos;s sent only to Google&apos;s Gemini API with
-            each request — never stored on StudyFlow&apos;s servers.
+            Stored encrypted at rest in your account. Sent to Google&apos;s Gemini API only when
+            you generate something — never exposed to other users.
           </p>
         </div>
 
-        {apiKey && (
+        {keyPreview && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-white/[0.03] border border-[var(--color-border)] px-3 py-2.5">
             <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-wider text-white/45 font-semibold mb-0.5">
                 Current key
               </div>
-              <div className="text-[13px] font-mono text-white/80 truncate">
-                {maskApiKey(apiKey)}
-              </div>
+              <div className="text-[13px] font-mono text-white/80 truncate">{keyPreview}</div>
             </div>
             <button
-              onClick={onClear}
-              className="shrink-0 inline-flex items-center gap-1 px-2 py-1.5 rounded-md text-[12px] text-rose-300 hover:bg-rose-500/10 transition"
+              onClick={handleClear}
+              disabled={saving}
+              className="shrink-0 inline-flex items-center gap-1 px-2 py-1.5 rounded-md text-[12px] text-rose-300 hover:bg-rose-500/10 disabled:opacity-50 transition"
             >
               <Trash2 className="size-3.5" /> Remove
             </button>
@@ -192,7 +229,7 @@ function SettingsModal({
 
         <label className="block mb-2">
           <span className="block text-[11px] uppercase tracking-wider text-white/45 mb-1.5 font-semibold">
-            {apiKey ? "Replace with a new key" : "Paste your key"}
+            {keyPreview ? "Replace with a new key" : "Paste your key"}
           </span>
           <div className="relative">
             <input
@@ -200,7 +237,7 @@ function SettingsModal({
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !testing) handleSave();
+                if (e.key === "Enter" && !saving) handleSave();
               }}
               placeholder="AIzaSy…"
               className="input-base font-mono !text-[13px] pr-9"
@@ -233,11 +270,11 @@ function SettingsModal({
           </button>
           <button
             onClick={handleSave}
-            disabled={testing || value.trim().length < 20}
+            disabled={saving || value.trim().length < 20}
             className="btn-primary inline-flex items-center gap-1.5"
           >
-            {testing && <Loader2 className="size-3.5 animate-spin" />}
-            {testing ? "Validating" : "Save key"}
+            {saving && <Loader2 className="size-3.5 animate-spin" />}
+            {saving ? "Saving" : "Save key"}
           </button>
         </div>
       </motion.div>

@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 import { useCourse } from "@/components/course-provider";
 import { useApiKey } from "@/components/api-key-provider";
-import { updateCourse } from "@/lib/db";
-import { fetchWithKey, MissingApiKeyError, parseJsonResponse } from "@/lib/api-key";
+import { addFlashcards, deleteFlashcardsByTopic } from "@/lib/repo";
+import { parseJsonResponse } from "@/lib/api-key";
 import type { Flashcard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +31,7 @@ export default function FlashcardsPage() {
 }
 
 function FlashcardsInner() {
-  const { course } = useCourse();
+  const { course, refresh } = useCourse();
   const { openSettings } = useApiKey();
   const search = useSearchParams();
   const [topic, setTopic] = useState(search.get("topic") ?? "");
@@ -64,7 +64,7 @@ function FlashcardsInner() {
     }
     setLoading(true);
     try {
-      const res = await fetchWithKey("/api/generate-flashcards", {
+      const res = await fetch("/api/generate-flashcards", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -77,21 +77,16 @@ function FlashcardsInner() {
       });
       const json = await parseJsonResponse<{ flashcards: Omit<Flashcard, "id">[] }>(res);
 
-      const newCards: Flashcard[] = (json.flashcards ?? []).map(
-        (c: Omit<Flashcard, "id">) => ({ ...c, id: crypto.randomUUID() })
-      );
-      await updateCourse(course.id, {
-        flashcards: [...course.flashcards, ...newCards],
-      });
-      toast.success(`Generated ${newCards.length} flashcards`);
+      const inserted = await addFlashcards(course.id, json.flashcards ?? []);
+      await refresh();
+      toast.success(`Generated ${inserted.length} flashcards`);
       setOpenDeck(topic.trim());
     } catch (err) {
-      if (err instanceof MissingApiKeyError) {
-        toast.error("Add your Gemini API key first", {
-          action: { label: "Settings", onClick: openSettings },
-        });
+      const msg = err instanceof Error ? err.message : "Failed to generate";
+      if (/api key|not authenticated/i.test(msg)) {
+        toast.error(msg, { action: { label: "Settings", onClick: openSettings } });
       } else {
-        toast.error(err instanceof Error ? err.message : "Failed to generate");
+        toast.error(msg);
       }
     } finally {
       setLoading(false);
@@ -100,10 +95,13 @@ function FlashcardsInner() {
 
   async function deleteDeck(name: string) {
     if (!confirm(`Delete the "${name}" deck?`)) return;
-    await updateCourse(course.id, {
-      flashcards: course.flashcards.filter((c) => c.topic !== name),
-    });
-    toast.success("Deck deleted");
+    try {
+      await deleteFlashcardsByTopic(course.id, name);
+      await refresh();
+      toast.success("Deck deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
+    }
   }
 
   const activeDeck = openDeck ? decks.find((d) => d.name === openDeck) : null;

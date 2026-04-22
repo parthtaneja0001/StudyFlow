@@ -7,8 +7,8 @@ import {
   MissingKeyError,
   MODEL_ID,
   NO_THINKING,
-  resolveApiKey,
 } from "@/lib/gemini";
+import { getGeminiKeyForCurrentUser } from "@/lib/supabase/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -23,7 +23,8 @@ type Body = {
 
 export async function POST(req: Request) {
   try {
-    const apiKey = resolveApiKey(req);
+    const apiKey = await getGeminiKeyForCurrentUser();
+    if (!apiKey) throw new MissingKeyError();
     const body = (await req.json()) as Body;
     const { courseTitle, textbook, topic, objectives = [], style = "comprehensive" } = body;
 

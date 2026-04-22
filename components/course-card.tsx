@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { BookOpen, Calendar, Trash2, Layers, NotebookPen, HelpCircle } from "lucide-react";
 import { toast } from "sonner";
-import { deleteCourse } from "@/lib/db";
+import { deleteCourse } from "@/lib/repo";
 import type { Course } from "@/lib/types";
 import { formatDate, truncate } from "@/lib/utils";
 
@@ -49,9 +49,13 @@ export function CourseCard({ course, onDelete }: { course: Course; onDelete?: ()
         onClick={async (e) => {
           e.preventDefault();
           if (!confirm(`Delete "${course.title}"? This can't be undone.`)) return;
-          await deleteCourse(course.id);
-          toast.success("Course deleted");
-          onDelete?.();
+          try {
+            await deleteCourse(course.id);
+            toast.success("Course deleted");
+            onDelete?.();
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to delete");
+          }
         }}
         className="absolute top-3 right-3 p-1.5 rounded-md text-white/30 hover:text-rose-300 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
         aria-label="Delete course"
