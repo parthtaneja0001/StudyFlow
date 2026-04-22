@@ -103,7 +103,7 @@ export default function HomePage() {
             <div className="flex items-baseline justify-between mb-5">
               <h2 className="text-[15px] font-semibold text-white">Your courses</h2>
               <span className="text-xs text-white/40">
-                {courses.length} saved locally
+                {courses.length} {courses.length === 1 ? "course" : "courses"}
               </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -122,7 +122,7 @@ export default function HomePage() {
             <span>Built for students.</span>
           </div>
           <div className="flex items-center gap-1.5">
-            Your data stays on your device
+            Protected by row-level security
             <ArrowRight className="size-3" />
           </div>
         </div>
