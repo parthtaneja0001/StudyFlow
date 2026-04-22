@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+/**
+ * Refreshes the Supabase session cookies and returns both the response and the
+ * current user (if any). Callers decide whether to gate routes on the user.
+ */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -23,8 +27,9 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Touch the user — this refreshes the session cookies if they're close to expiring.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  return response;
+  return { response, user };
 }
